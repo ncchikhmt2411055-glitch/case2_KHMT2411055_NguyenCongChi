@@ -3,6 +3,7 @@ import '../services/api_service.dart';
 import '../utils/task_format.dart';
 import 'login_screen.dart';
 import 'task_detail_screen.dart';
+import 'task_form_screen.dart';
 
 class TaskListScreen extends StatefulWidget {
   const TaskListScreen({super.key});
@@ -36,6 +37,22 @@ class _TaskListScreenState extends State<TaskListScreen> {
     setState(() => _future = _fetch());
   }
 
+  Future<void> _openCreate() async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const TaskFormScreen()),
+    );
+    if (saved == true) _reload();
+  }
+
+  Future<void> _openDetail(String id) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: id)),
+    );
+    if (changed == true) _reload();
+  }
+
   Future<void> _logout() async {
     await ApiService.clearToken();
     if (!mounted) return;
@@ -56,6 +73,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
           IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openCreate,
+        child: const Icon(Icons.add),
       ),
       body: FutureBuilder<List<dynamic>>(
         future: _future,
@@ -81,7 +102,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
           final tasks = snap.data ?? [];
           if (tasks.isEmpty) {
-            return const Center(child: Text('Chưa có công việc nào'));
+            return const Center(child: Text('Chưa có công việc nào. Bấm + để thêm.'));
           }
 
           return RefreshIndicator(
@@ -97,12 +118,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                     '${statusLabel(t['status'])} • Ưu tiên: ${priorityLabel(t['priority'])}',
                   ),
                   trailing: Text(formatDate(t['dueDate'])),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TaskDetailScreen(taskId: t['id'].toString()),
-                    ),
-                  ),
+                  onTap: () => _openDetail(t['id'].toString()),
                 );
               },
             ),
