@@ -1,6 +1,5 @@
 const express = require('express');
 const {
-  listTasks,
   getTask,
   createTask,
   updateTask,
@@ -8,6 +7,7 @@ const {
   deleteTask,
   listActivities,
 } = require('../controllers/taskController');
+const { listTasks } = require('../controllers/taskListController');
 const {
   listAssignees,
   assignUsers,

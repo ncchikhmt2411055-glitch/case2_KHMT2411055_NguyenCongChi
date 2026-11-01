@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../utils/task_format.dart';
 import 'login_screen.dart';
+import 'notification_screen.dart';
+import 'statistics_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_form_screen.dart';
 
@@ -13,17 +15,42 @@ class TaskListScreen extends StatefulWidget {
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
+  final _search = TextEditingController();
+  String _scope = 'all';
+  String _status = '';
+  String _priority = '';
+  String _sortBy = 'dueDate';
+  String _order = 'asc';
+  int _unread = 0;
   late Future<List<dynamic>> _future;
 
   @override
   void initState() {
     super.initState();
     _future = _fetch();
+    _loadUnread();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<List<dynamic>> _fetch() async {
+    final params = <String, String>{
+      'scope': _scope,
+      'sortBy': _sortBy,
+      'order': _order,
+    };
+    if (_status.isNotEmpty) params['status'] = _status;
+    if (_priority.isNotEmpty) params['priority'] = _priority;
+    final q = _search.text.trim();
+    if (q.isNotEmpty) params['q'] = q;
+
+    final qs = Uri(queryParameters: params).query;
     try {
-      final data = await ApiService.get('/tasks');
+      final data = await ApiService.get('/tasks?$qs');
       return data['tasks'] as List<dynamic>;
     } on ApiException catch (e) {
       if (e.statusCode == 401) {
@@ -33,8 +60,19 @@ class _TaskListScreenState extends State<TaskListScreen> {
     }
   }
 
+  Future<void> _loadUnread() async {
+    try {
+      final data = await ApiService.get('/notifications/unread-count');
+      if (!mounted) return;
+      setState(() => _unread = (data['count'] as num).toInt());
+    } catch (_) {}
+  }
+
   void _reload() {
-    setState(() => _future = _fetch());
+    setState(() {
+      _future = _fetch();
+    });
+    _loadUnread();
   }
 
   Future<void> _openCreate() async {
@@ -53,6 +91,21 @@ class _TaskListScreenState extends State<TaskListScreen> {
     if (changed == true) _reload();
   }
 
+  Future<void> _openNotifications() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const NotificationScreen()),
+    );
+    _loadUnread();
+  }
+
+  Future<void> _openStatistics() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const StatisticsScreen()),
+    );
+  }
+
   Future<void> _logout() async {
     await ApiService.clearToken();
     if (!mounted) return;
@@ -63,6 +116,19 @@ class _TaskListScreenState extends State<TaskListScreen> {
     );
   }
 
+  Widget _dropdown(String value, Map<String, String> options, void Function(String) onChanged) {
+    return DropdownButton<String>(
+      value: value,
+      underline: const SizedBox.shrink(),
+      items: options.entries
+          .map((e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)))
+          .toList(),
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -70,6 +136,20 @@ class _TaskListScreenState extends State<TaskListScreen> {
         title: const Text('Công việc'),
         centerTitle: true,
         actions: [
+          IconButton(
+            tooltip: 'Thông báo',
+            onPressed: _openNotifications,
+            icon: Badge(
+              isLabelVisible: _unread > 0,
+              label: Text('$_unread'),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Thống kê',
+            onPressed: _openStatistics,
+            icon: const Icon(Icons.bar_chart),
+          ),
           IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
@@ -78,52 +158,133 @@ class _TaskListScreenState extends State<TaskListScreen> {
         onPressed: _openCreate,
         child: const Icon(Icons.add),
       ),
-      body: FutureBuilder<List<dynamic>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('${snap.error}', textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    ElevatedButton(onPressed: _reload, child: const Text('Thử lại')),
-                  ],
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _reload(),
+              decoration: InputDecoration(
+                hintText: 'Tìm theo tên công việc',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    _search.clear();
+                    _reload();
+                  },
                 ),
+                border: const OutlineInputBorder(),
+                isDense: true,
               ),
-            );
-          }
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                _dropdown(_scope, const {
+                  'all': 'Tất cả',
+                  'created': 'Tôi tạo',
+                  'assigned': 'Được giao',
+                  'shared': 'Được chia sẻ',
+                }, (v) {
+                  _scope = v;
+                  _reload();
+                }),
+                const SizedBox(width: 12),
+                _dropdown(_status, const {
+                  '': 'Mọi trạng thái',
+                  'todo': 'Chưa thực hiện',
+                  'in_progress': 'Đang thực hiện',
+                  'completed': 'Đã hoàn thành',
+                }, (v) {
+                  _status = v;
+                  _reload();
+                }),
+                const SizedBox(width: 12),
+                _dropdown(_priority, const {
+                  '': 'Mọi ưu tiên',
+                  'low': 'Thấp',
+                  'medium': 'Trung bình',
+                  'high': 'Cao',
+                }, (v) {
+                  _priority = v;
+                  _reload();
+                }),
+                const SizedBox(width: 12),
+                _dropdown(_sortBy, const {
+                  'dueDate': 'Theo hạn',
+                  'priority': 'Theo ưu tiên',
+                  'createdAt': 'Theo ngày tạo',
+                }, (v) {
+                  _sortBy = v;
+                  _reload();
+                }),
+                const SizedBox(width: 12),
+                _dropdown(_order, const {
+                  'asc': 'Tăng dần',
+                  'desc': 'Giảm dần',
+                }, (v) {
+                  _order = v;
+                  _reload();
+                }),
+              ],
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<dynamic>>(
+              future: _future,
+              builder: (context, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snap.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('${snap.error}', textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          ElevatedButton(onPressed: _reload, child: const Text('Thử lại')),
+                        ],
+                      ),
+                    ),
+                  );
+                }
 
-          final tasks = snap.data ?? [];
-          if (tasks.isEmpty) {
-            return const Center(child: Text('Chưa có công việc nào. Bấm + để thêm.'));
-          }
+                final tasks = snap.data ?? [];
+                if (tasks.isEmpty) {
+                  return const Center(child: Text('Không có công việc phù hợp'));
+                }
 
-          return RefreshIndicator(
-            onRefresh: () async => _reload(),
-            child: ListView.separated(
-              itemCount: tasks.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, i) {
-                final t = tasks[i] as Map<String, dynamic>;
-                return ListTile(
-                  title: Text((t['title'] ?? '').toString()),
-                  subtitle: Text(
-                    '${statusLabel(t['status'])} • Ưu tiên: ${priorityLabel(t['priority'])}',
+                return RefreshIndicator(
+                  onRefresh: () async => _reload(),
+                  child: ListView.separated(
+                    itemCount: tasks.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final t = tasks[i] as Map<String, dynamic>;
+                      return ListTile(
+                        title: Text((t['title'] ?? '').toString()),
+                        subtitle: Text(
+                          '${statusLabel(t['status'])} • Ưu tiên: ${priorityLabel(t['priority'])}',
+                        ),
+                        trailing: Text(formatDate(t['dueDate'])),
+                        onTap: () => _openDetail(t['id'].toString()),
+                      );
+                    },
                   ),
-                  trailing: Text(formatDate(t['dueDate'])),
-                  onTap: () => _openDetail(t['id'].toString()),
                 );
               },
             ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
