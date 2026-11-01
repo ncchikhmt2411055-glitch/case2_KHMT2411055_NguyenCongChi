@@ -19,9 +19,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
   String _scope = 'all';
   String _status = '';
   String _priority = '';
+  String _assignee = '';
   String _sortBy = 'dueDate';
   String _order = 'asc';
   int _unread = 0;
+  final Map<String, String> _assignees = {'': 'Mọi người phụ trách'};
   late Future<List<dynamic>> _future;
 
   @override
@@ -45,19 +47,44 @@ class _TaskListScreenState extends State<TaskListScreen> {
     };
     if (_status.isNotEmpty) params['status'] = _status;
     if (_priority.isNotEmpty) params['priority'] = _priority;
+    if (_assignee.isNotEmpty) params['assigneeId'] = _assignee;
     final q = _search.text.trim();
     if (q.isNotEmpty) params['q'] = q;
 
     final qs = Uri(queryParameters: params).query;
     try {
       final data = await ApiService.get('/tasks?$qs');
-      return data['tasks'] as List<dynamic>;
+      final list = data['tasks'] as List<dynamic>;
+      _collectAssignees(list);
+      return list;
     } on ApiException catch (e) {
       if (e.statusCode == 401) {
         await ApiService.clearToken();
       }
       rethrow;
     }
+  }
+
+  void _collectAssignees(List<dynamic> tasks) {
+    var changed = false;
+    for (final t in tasks) {
+      final task = t as Map<String, dynamic>;
+      final people = <dynamic>[];
+      final list = task['assignees'];
+      if (list is List) people.addAll(list);
+      final primary = task['primaryAssignee'];
+      if (primary is Map) people.add(primary);
+
+      for (final p in people) {
+        if (p is! Map) continue;
+        final id = (p['id'] ?? p['_id'] ?? '').toString();
+        if (id.isNotEmpty && !_assignees.containsKey(id)) {
+          _assignees[id] = (p['fullName'] ?? p['email'] ?? id).toString();
+          changed = true;
+        }
+      }
+    }
+    if (changed && mounted) setState(() {});
   }
 
   Future<void> _loadUnread() async {
@@ -118,7 +145,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
 
   Widget _dropdown(String value, Map<String, String> options, void Function(String) onChanged) {
     return DropdownButton<String>(
-      value: value,
+      value: options.containsKey(value) ? value : options.keys.first,
       underline: const SizedBox.shrink(),
       items: options.entries
           .map((e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)))
@@ -213,6 +240,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
                   'high': 'Cao',
                 }, (v) {
                   _priority = v;
+                  _reload();
+                }),
+                const SizedBox(width: 12),
+                _dropdown(_assignee, _assignees, (v) {
+                  _assignee = v;
                   _reload();
                 }),
                 const SizedBox(width: 12),
