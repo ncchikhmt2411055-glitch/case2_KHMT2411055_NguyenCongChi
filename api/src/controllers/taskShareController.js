@@ -1,4 +1,5 @@
 const TaskShare = require('../models/TaskShare');
+const { notifyEvent } = require('../services/notificationService');
 const { loadTask, canManage, logActivity, usersExist } = require('../services/taskService');
 
 const PERMISSIONS = ['viewer', 'editor'];
@@ -53,6 +54,14 @@ async function createShares(req, res) {
     return res.status(400).json({ message: 'Không thể chia sẻ cho chính người tạo' });
   }
 
+  // Chỉ những người chưa được chia sẻ trước đó mới nhận email và thông báo (tránh gửi trùng)
+  const existing = await TaskShare.find({
+    taskId: task._id,
+    userId: { $in: targets },
+  }).select('userId');
+  const already = new Set(existing.map((s) => String(s.userId)));
+  const newTargets = targets.filter((id) => !already.has(id));
+
   // Nếu đã chia sẻ trước đó thì cập nhật quyền, không tạo bản ghi trùng
   await TaskShare.bulkWrite(
     targets.map((uid) => ({
@@ -65,6 +74,17 @@ async function createShares(req, res) {
   );
 
   await logActivity(task._id, req.user._id, 'shared', { userIds: targets, permission });
+
+  if (newTargets.length) {
+    notifyEvent({
+      userIds: newTargets,
+      actor: req.user,
+      task,
+      eventType: 'shared',
+      extra: { permission },
+    }).catch((e) => console.error('Lỗi thông báo:', e.message));
+  }
+
   res.status(201).json({ shares: await sharesOf(task._id) });
 }
 
