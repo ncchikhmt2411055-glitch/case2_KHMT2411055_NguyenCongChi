@@ -11,6 +11,7 @@ const taskSchema = new mongoose.Schema(
     dueDate: { type: Date, default: null },
     priority: { type: String, enum: ['low', 'medium', 'high'], default: 'medium' },
     status: { type: String, enum: ['todo', 'in_progress', 'completed'], default: 'todo' },
+    reminderSentAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

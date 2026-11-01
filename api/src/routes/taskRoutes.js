@@ -20,6 +20,7 @@ const {
   updateShare,
   revokeShare,
 } = require('../controllers/taskShareController');
+const { listTaskEmailLogs } = require('../controllers/emailLogController');
 const { requireAuth } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -43,5 +44,7 @@ router.get('/:id/shares', listShares);
 router.post('/:id/shares', createShares);
 router.patch('/:id/shares/:shareId', updateShare);
 router.delete('/:id/shares/:shareId', revokeShare);
+
+router.get('/:id/email-logs', listTaskEmailLogs);
 
 module.exports = router;

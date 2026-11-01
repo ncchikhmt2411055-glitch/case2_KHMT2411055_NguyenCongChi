@@ -1,4 +1,5 @@
 const Task = require('../models/Task');
+const { notifyEvent } = require('../services/notificationService');
 const {
   formatTask,
   loadTask,
@@ -46,6 +47,8 @@ async function assignUsers(req, res) {
 
   await Task.updateOne({ _id: task._id }, update);
   await logActivity(task._id, req.user._id, 'assigned', { userIds: ids });
+  notifyEvent({ userIds: ids, actor: req.user, task, eventType: 'assigned' })
+    .catch((e) => console.error('Lỗi thông báo:', e.message));
 
   const full = await reloadTask(task._id);
   res.json({ task: formatTask(full, role) });
